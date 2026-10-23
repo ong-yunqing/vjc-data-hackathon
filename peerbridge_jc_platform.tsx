@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Users,
   BookOpen,
@@ -22,25 +22,16 @@ import {
   Filter,
   Plus,
   X,
-  ChevronRight,
   GraduationCap,
   Folder,
   UploadCloud,
-  File,
   Info,
   RefreshCw,
   MessageSquare,
   Sliders,
-  Check,
   Zap,
-  Building2,
-  ChevronDown,
   UserCheck,
-  HelpCircle,
-  BarChart3,
-  Award,
-  Layers,
-  Share2
+  Layers
 } from 'lucide-react';
 
 // ==========================================
@@ -234,6 +225,17 @@ const INITIAL_MESSAGES = {
   ]
 };
 
+const INITIAL_NEW_STUDENT_FORM = {
+  name: '',
+  school: SCHOOLS[0],
+  level: 'J1',
+  role: 'Tutee',
+  subject: SUBJECTS[0],
+  rawScore: 60,
+  slots: ['Mon 16:00-18:00'],
+  focus: ''
+};
+
 // ==========================================
 // CORE MATCHING RULES ENGINE
 // ==========================================
@@ -342,8 +344,7 @@ function runGreedyMatchingAlgorithm(students, isPostJuly) {
   const tutees = students.filter(s => s.role === 'Tutee' || s.role === 'Both');
 
   const matches = [];
-  const matchedTutorIds = new Set();
-  const matchedTuteeIds = new Set();
+  const matchedStudentIds = new Set();
 
   // Create candidate pairs with evaluation metrics
   const candidatePairs = [];
@@ -366,9 +367,9 @@ function runGreedyMatchingAlgorithm(students, isPostJuly) {
   // Sort candidate pairs by score gap descending (best academic fit first)
   candidatePairs.sort((a, b) => b.scoreGap - a.scoreGap);
 
-  // Greedy selection
+  // Greedy selection (ensures each student is matched at most once across all pairs)
   for (const pair of candidatePairs) {
-    if (!matchedTutorIds.has(pair.tutor.id) && !matchedTuteeIds.has(pair.tutee.id)) {
+    if (!matchedStudentIds.has(pair.tutor.id) && !matchedStudentIds.has(pair.tutee.id)) {
       matches.push({
         id: `match_${pair.tutor.id}_${pair.tutee.id}`,
         tutor: pair.tutor,
@@ -380,8 +381,8 @@ function runGreedyMatchingAlgorithm(students, isPostJuly) {
         isCrossJC: pair.evalResult.isCrossJC,
         matchedAt: new Date().toLocaleDateString('en-SG', { month: 'short', day: 'numeric', year: 'numeric' })
       });
-      matchedTutorIds.add(pair.tutor.id);
-      matchedTuteeIds.add(pair.tutee.id);
+      matchedStudentIds.add(pair.tutor.id);
+      matchedStudentIds.add(pair.tutee.id);
     }
   }
 
@@ -414,22 +415,12 @@ export default function App() {
 
   // New Student Modal State
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
-  const [newStudentForm, setNewStudentForm] = useState({
-    name: '',
-    school: SCHOOLS[0],
-    level: 'J1',
-    role: 'Tutee',
-    subject: SUBJECTS[0],
-    rawScore: 60,
-    slots: ['Mon 16:00-18:00'],
-    focus: ''
-  });
+  const [newStudentForm, setNewStudentForm] = useState(INITIAL_NEW_STUDENT_FORM);
 
-  // Calculated derived state for simulation date
+  // Timezone-safe date check for simulation date (August 1st or later is Post-July)
   const isPostJuly = useMemo(() => {
-    const dateObj = new Date(simulationDate);
-    // Month 7 is August (0-indexed)
-    return dateObj.getMonth() >= 7 || (dateObj.getMonth() === 6 && dateObj.getDate() >= 31);
+    const [, month] = simulationDate.split('-').map(Number);
+    return month >= 8;
   }, [simulationDate]);
 
   // Formed Matches based on simulation date & current students
@@ -522,7 +513,7 @@ export default function App() {
       [chatKey]: [...(prev[chatKey] || []), newMessage]
     }));
 
-    if (!customFile) setChatInput('');
+    setChatInput('');
   };
 
   // Preset material button action
@@ -564,7 +555,7 @@ export default function App() {
   // Profile Form Edit Handler
   const handleUpdateProfile = (e) => {
     e.preventDefault();
-    const formData = new FormData(e.target);
+    const formData = new FormData(e.currentTarget);
     const updatedSubject = formData.get('subject');
     const updatedRole = formData.get('role');
     const updatedFocus = formData.get('focus');
@@ -593,10 +584,11 @@ export default function App() {
       ...newStudentForm,
       letterGrade,
       avatarBg: 'bg-indigo-700',
-      bio: 'Newly registered student in PeerBridge system.'
+      bio: newStudentForm.focus || 'Newly registered student in PeerBridge system.'
     };
 
     setStudents(prev => [...prev, createdStudent]);
+    setNewStudentForm(INITIAL_NEW_STUDENT_FORM);
     setShowAddStudentModal(false);
   };
 
@@ -849,7 +841,7 @@ export default function App() {
                       Update Peer Consultation Request
                     </h3>
 
-                    <form onSubmit={handleUpdateProfile} className="space-y-3 text-xs">
+                    <form key={currentStudent.id} onSubmit={handleUpdateProfile} className="space-y-3 text-xs">
                       <div>
                         <label className="block text-slate-400 mb-1">Target Subject</label>
                         <select
@@ -1655,8 +1647,8 @@ export default function App() {
                           );
                         }
 
-                        return pairs.map(({ tutor, tutee, evalRes }, index) => (
-                          <tr key={index} className="hover:bg-slate-700/30 transition-all">
+                        return pairs.map(({ tutor, tutee, evalRes }) => (
+                          <tr key={`${tutor.id}-${tutee.id}`} className="hover:bg-slate-700/30 transition-all">
                             <td className="p-3">
                               <div className="font-bold text-slate-100">{tutor.name}</div>
                               <div className="text-[10px] text-slate-400">{tutor.school.split(' ')[0]} ({tutor.level})</div>
@@ -2032,7 +2024,18 @@ export default function App() {
                   min="0"
                   max="100"
                   value={newStudentForm.rawScore}
-                  onChange={e => setNewStudentForm({ ...newStudentForm, rawScore: parseInt(e.target.value) || 0 })}
+                  onChange={e => setNewStudentForm({ ...newStudentForm, rawScore: parseInt(e.target.value, 10) || 0 })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1">Focus Topics / Bio Notes</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Needs help with Integration & Calculus"
+                  value={newStudentForm.focus}
+                  onChange={e => setNewStudentForm({ ...newStudentForm, focus: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-200 outline-none"
                 />
               </div>
